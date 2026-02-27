@@ -1,7 +1,7 @@
 .PHONY: all build gen-s calc-s gen-full calc-full clean
 
 BIN := 1brc
-STATIONS := stations.txt
+STATIONS := weather_stations.csv
 SAMPLE := sample.txt
 FULL := measurements.txt
 

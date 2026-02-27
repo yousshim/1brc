@@ -8,7 +8,6 @@
 # Generated data files
 sample.txt
 measurements.txt
-*.csv
 
 # Test binary
 *.test

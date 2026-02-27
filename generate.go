@@ -11,26 +11,27 @@ import (
 )
 
 type station struct {
-	name string
+	name     string
 	meanTemp float64
 }
 
 func (s station) temp() float64 {
-	return rand.NormFloat64()*7+s.meanTemp
+	return rand.NormFloat64()*7 + s.meanTemp
 }
 
 func Generate(size int, r io.Reader, w io.Writer) {
 	stations, err := readStations(r)
+	bw := bufio.NewWriter(w)
+	defer bw.Flush()
 	if err != nil {
 		panic(err)
 	}
 	start := time.Now()
 	localStart := start
-	w = bufio.NewWriter(w)
 	for i := range size {
 		station := stations[rand.IntN(len(stations))]
-		fmt.Fprintf(w, "%s;%.2f\n", station.name, station.temp())
-		if i % 50_000_000 == 0 {
+		fmt.Fprintf(bw, "%s;%.2f\n", station.name, station.temp())
+		if i%50_000_000 == 0 {
 			fmt.Printf("Generated %d measurements in %f s\n", i, time.Since(localStart).Seconds())
 			localStart = time.Now()
 		}
@@ -55,7 +56,7 @@ func readStations(r io.Reader) ([]station, error) {
 			return nil, err
 		}
 		station := station{
-			name: parts[0],
+			name:     parts[0],
 			meanTemp: meanTemp,
 		}
 		stations = append(stations, station)
