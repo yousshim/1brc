@@ -6,6 +6,8 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"maps"
+	"slices"
 )
 
 type stationStat struct {
@@ -13,6 +15,11 @@ type stationStat struct {
 	max float64
 	sum float64
 	cnt int
+}
+
+func (stat stationStat) String() string {
+	mean := stat.sum / float64(stat.cnt)
+	return fmt.Sprintf("%.2f/%.2f/%.2f", stat.min, stat.max, mean)
 }
 
 func Calculate(r io.Reader, w io.Writer) {
@@ -39,5 +46,7 @@ func Calculate(r io.Reader, w io.Writer) {
 			stats[name] = stat
 		}
 	}
-	fmt.Fprintf(w, "%v", stats)
+	for _, key := range slices.Sorted(maps.Keys(stats)) {
+		fmt.Fprintf(w, "%s:%v\n", key, stats[key])
+	}
 }
