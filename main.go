@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime/pprof"
+	"runtime"
 )
 
 func main() {
@@ -17,6 +19,8 @@ func main() {
 
 	calculateCmd := flag.NewFlagSet("calculate", flag.ExitOnError)
 	calculateCmd.StringVar(&inputFile, "i", "", "Input file with measurements")
+	cpuProf := calculateCmd.Bool("cpuprof", false, "Enable cpu profiling")
+	memProf := calculateCmd.Bool("memprof", false, "Enable memory profiling")
 
 	switch os.Args[1] {
 	case "generate":
@@ -58,9 +62,25 @@ func main() {
 			os.Exit(1)
 		}
 		defer measurementsFile.Close()
+
+		if *cpuProf {
+			f, _ := os.Create("cpu.prof")
+			defer f.Close()
+			pprof.StartCPUProfile(f)
+			defer pprof.StopCPUProfile()
+		}
+
 		Calculate(measurementsFile, os.Stdout)
+
+		if *memProf {
+			mf, _ := os.Create("mem.prof")
+			defer mf.Close()
+			runtime.GC()
+			pprof.Lookup("allocs").WriteTo(mf, 0)
+		}
 	default:
 		fmt.Println("Unknown command")
 		os.Exit(1)
 	}
+
 }
