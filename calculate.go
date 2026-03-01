@@ -9,17 +9,17 @@ import (
 
 type stationStat struct {
 	name []byte
-	min int
-	max int
-	sum int64
-	cnt int
+	min  int
+	max  int
+	sum  int64
+	cnt  int
 	hash uint64
 }
 
 func (stat stationStat) String() string {
-	mean := float64(stat.sum)/10/float64(stat.cnt)
-	minn := float64(stat.min)/10
-	maxx := float64(stat.max)/10
+	mean := float64(stat.sum) / 10 / float64(stat.cnt)
+	minn := float64(stat.min) / 10
+	maxx := float64(stat.max) / 10
 	return fmt.Sprintf("\"%s\"/%.1f/%.1f/%.1f", string(stat.name), minn, maxx, mean)
 }
 
@@ -30,22 +30,23 @@ func Calculate(r io.Reader, w io.Writer) {
 		line := s.Bytes()
 		splitIdx := bytes.IndexRune(line, ';')
 		name := line[:splitIdx]
-		idx, ok := findTableIndex(stats, name)
 		temp := parseTemp(line[splitIdx+1:])
-		if ok {
+		h := hash(name) & (uint64(len(stats)) - 1)
+		if idx, ok := probe(stats, name, h); ok {
 			stat := stats[idx]
 			stat.min = min(stat.min, temp)
 			stat.max = max(stat.max, temp)
 			stat.sum += int64(temp)
 			stat.cnt++
 		} else {
-			stats[idx] = &stationStat{
+			stat := &stationStat{
 				name: append([]byte{}, name...),
-				min: temp,
-				max: temp,
-				sum: int64(temp),
-				cnt: 1,
+				min:  temp,
+				max:  temp,
+				sum:  int64(temp),
+				cnt:  1,
 			}
+			insert(stats, stat, h)
 		}
 	}
 	bw := bufio.NewWriter(w)
@@ -70,19 +71,24 @@ func parseTemp(bytes []byte) int {
 		}
 		temp = temp*10 + int(b-'0')
 	}
-	return sign*temp
+	return sign * temp
 }
 
-func hash(bytes []byte, capacity int) uint64 {
-	h := uint64(0)
+func hash(bytes []byte) uint64 {
+	const (
+		fnvOffset64 = 14695981039346656037
+		fnvPrime64  = 1099511628211
+	)
+
+	h := uint64(fnvOffset64)
 	for _, b := range bytes {
-		h = h*31 + uint64(b)
+		h ^= uint64(b)
+		h *= fnvPrime64
 	}
-	return h & (uint64(capacity) - 1)
+	return h
 }
 
-func findTableIndex(table []*stationStat, key []byte) (uint64, bool) {
-	h := hash(key, len(table))
+func probe(table []*stationStat, k []byte, h uint64) (uint64, bool) {
 	for i := h; i < uint64(len(table)); i++ {
 		if table[i] == nil {
 			return i, false
@@ -90,8 +96,7 @@ func findTableIndex(table []*stationStat, key []byte) (uint64, bool) {
 		if table[i].hash == h {
 			return i, true
 		}
-		if  bytes.Equal(table[i].name, key) {
-			table[i].hash = h
+		if bytes.Equal(table[i].name, k) {
 			return i, true
 		}
 	}
@@ -102,11 +107,36 @@ func findTableIndex(table []*stationStat, key []byte) (uint64, bool) {
 		if table[i].hash == h {
 			return i, true
 		}
-		if bytes.Equal(table[i].name, key) {
-			table[i].hash = h
+		if bytes.Equal(table[i].name, k) {
 			return i, true
 		}
 	}
 	panic("unreachable")
 }
 
+func insert(table []*stationStat, stat *stationStat, h uint64) {
+	stat.hash = h
+	n := uint64(len(table))
+	idx := h
+	dist := uint64(0)
+
+	for {
+		if table[idx] == nil {
+			table[idx] = stat
+			return
+		}
+
+		existing := table[idx]
+		existingDist := (idx + n - existing.hash) & (n - 1)
+		if existingDist < dist {
+			table[idx], stat = stat, existing
+			dist = existingDist
+		}
+
+		idx = (idx + 1) & (n - 1)
+		dist++
+		if dist >= n {
+			panic("hash table is full")
+		}
+	}
+}
