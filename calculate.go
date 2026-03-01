@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"slices"
 )
 
 type stationStat struct {
@@ -28,10 +27,9 @@ func Calculate(r io.Reader, w io.Writer) {
 	stats := make([]*stationStat, 1<<17)
 	for s.Scan() {
 		line := s.Bytes()
-		splitIdx := slices.Index(line, ';')
+		idx, ok, splitIdx := findTableAndSplitIndex(stats, line)
 		name := line[:splitIdx]
 		temp := parseTemp(line[splitIdx+1:])
-		idx, ok := find(stats, name)
 		if ok {
 			stat := stats[idx]
 			stat.min = min(stat.min, temp)
@@ -48,9 +46,11 @@ func Calculate(r io.Reader, w io.Writer) {
 			}
 		}
 	}
+	bw := bufio.NewWriter(w)
+	defer bw.Flush()
 	for _, stat := range stats {
 		if stat != nil {
-			fmt.Fprintf(w, "%v\n", stat)
+			fmt.Fprintf(bw, "%v\n", stat)
 		}
 	}
 }
@@ -71,40 +71,43 @@ func parseTemp(bytes []byte) int {
 	return sign*temp
 }
 
-func hash(key []byte) int {
+func findTableAndSplitIndex(table []*stationStat, line []byte) (int, bool, int) {
 	h := 0
-	for _, b := range key {
+	si := 0
+	for _, b := range line {
+		if b == ';' {
+			break
+		}
+		si++
 		h = h*31 + int(b)
 	}
 	if h < 0 {
 		h = -h
 	}
-	return h
-}
-
-func find(table []*stationStat, key []byte) (int, bool) {
-	h := hash(key) % len(table)
+	h = h % len(table)
+	key := line[:si]
 	if table[h] == nil {
-		return h, false
+		return h, false, si
 	}
 	if bytes.Equal(table[h].name, key) {
-		return h, true
+		return h, true, si
 	}
 	for i := h; i < len(table); i++ {
 		if table[i] == nil {
-			return i, false
+			return i, false, si
 		}
 		if bytes.Equal(table[i].name, key) {
-			return i, true
+			return i, true, si
 		}
 	}
 	for i := range h {
 		if table[i] == nil {
-			return i, false
+			return i, false, si
 		}
 		if bytes.Equal(table[i].name, key) {
-			return i, true
+			return i, true, si
 		}
 	}
 	panic("unreachable")
 }
+
