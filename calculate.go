@@ -24,11 +24,13 @@ func (stat stationStat) String() string {
 }
 
 func Calculate(r io.Reader, w io.Writer) {
-	s := bufio.NewScanner(r)
 	stats := make([]*stationStat, 1<<17)
-	for s.Scan() {
-		line := s.Bytes()
-		splitIdx := bytes.IndexRune(line, ';')
+
+	processLine := func(line []byte) {
+		splitIdx := bytes.IndexByte(line, ';')
+		if splitIdx < 0 {
+			return
+		}
 		name := line[:splitIdx]
 		temp := parseTemp(line[splitIdx+1:])
 		h := hash(name)
@@ -38,17 +40,71 @@ func Calculate(r io.Reader, w io.Writer) {
 			stat.max = max(stat.max, temp)
 			stat.sum += int64(temp)
 			stat.cnt++
-		} else {
-			stat := &stationStat{
-				name: append([]byte{}, name...),
-				min:  temp,
-				max:  temp,
-				sum:  int64(temp),
-				cnt:  1,
+			return
+		}
+
+		stat := &stationStat{
+			name: append([]byte{}, name...),
+			min:  temp,
+			max:  temp,
+			sum:  int64(temp),
+			cnt:  1,
+		}
+		insert(stats, stat, h)
+	}
+
+	const chunkSize = 1 << 20
+	buf := make([]byte, chunkSize)
+	used := 0
+
+	for {
+		n, err := r.Read(buf[used:])
+		if n > 0 {
+			dataLen := used + n
+
+			start := 0
+			for {
+				rel := bytes.IndexByte(buf[start:dataLen], '\n')
+				if rel < 0 {
+					break
+				}
+
+				end := start + rel
+				line := buf[start:end]
+				if len(line) > 0 && line[len(line)-1] == '\r' {
+					line = line[:len(line)-1]
+				}
+				if len(line) > 0 {
+					processLine(line)
+				}
+				start = end + 1
 			}
-			insert(stats, stat, h)
+
+			if start < dataLen {
+				used = copy(buf, buf[start:dataLen])
+			} else {
+				used = 0
+			}
+		}
+
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			panic(err)
 		}
 	}
+
+	if used > 0 {
+		line := buf[:used]
+		if line[len(line)-1] == '\r' {
+			line = line[:len(line)-1]
+		}
+		if len(line) > 0 {
+			processLine(line)
+		}
+	}
+
 	bw := bufio.NewWriter(w)
 	defer bw.Flush()
 	for _, stat := range stats {
