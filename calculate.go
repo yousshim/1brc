@@ -31,7 +31,7 @@ func Calculate(r io.Reader, w io.Writer) {
 		splitIdx := bytes.IndexRune(line, ';')
 		name := line[:splitIdx]
 		temp := parseTemp(line[splitIdx+1:])
-		h := hash(name) & (uint64(len(stats)) - 1)
+		h := hash(name)
 		if idx, ok := probe(stats, name, h); ok {
 			stat := stats[idx]
 			stat.min = min(stat.min, temp)
@@ -89,7 +89,8 @@ func hash(bytes []byte) uint64 {
 }
 
 func probe(table []*stationStat, k []byte, h uint64) (uint64, bool) {
-	for i := h; i < uint64(len(table)); i++ {
+	idx := h & (uint64(len(table)) - 1)
+	for i := idx; i < uint64(len(table)); i++ {
 		if table[i] == nil {
 			return i, false
 		}
@@ -97,7 +98,7 @@ func probe(table []*stationStat, k []byte, h uint64) (uint64, bool) {
 			return i, true
 		}
 	}
-	for i := range h {
+	for i := range idx {
 		if table[i] == nil {
 			return i, false
 		}
@@ -111,7 +112,7 @@ func probe(table []*stationStat, k []byte, h uint64) (uint64, bool) {
 func insert(table []*stationStat, stat *stationStat, h uint64) {
 	stat.hash = h
 	n := uint64(len(table))
-	idx := h
+	idx := h & (n - 1)
 	dist := uint64(0)
 
 	for {
