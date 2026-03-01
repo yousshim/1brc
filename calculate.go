@@ -4,10 +4,10 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"strconv"
-	"strings"
 	"maps"
 	"slices"
+	"strconv"
+	"strings"
 )
 
 type stationStat struct {
@@ -19,7 +19,7 @@ type stationStat struct {
 
 func (stat stationStat) String() string {
 	mean := stat.sum / float64(stat.cnt)
-	return fmt.Sprintf("%.2f/%.2f/%.2f", stat.min, stat.max, mean)
+	return fmt.Sprintf("%.1f/%.1f/%.1f", stat.min, stat.max, mean)
 }
 
 func Calculate(r io.Reader, w io.Writer) {
@@ -47,6 +47,6 @@ func Calculate(r io.Reader, w io.Writer) {
 		}
 	}
 	for _, key := range slices.Sorted(maps.Keys(stats)) {
-		fmt.Fprintf(w, "%s:%v\n", key, stats[key])
+		fmt.Fprintf(w, "\"%s\"/%v\n", key, stats[key])
 	}
 }
