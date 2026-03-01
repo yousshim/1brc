@@ -7,7 +7,6 @@ import (
 	"maps"
 	"slices"
 	"strconv"
-	"strings"
 )
 
 type stationStat struct {
@@ -26,10 +25,10 @@ func Calculate(r io.Reader, w io.Writer) {
 	s := bufio.NewScanner(r)
 	stats := make(map[string]*stationStat)
 	for s.Scan() {
-		line := s.Text()
-		parts := strings.Split(line, ";")
-		name := parts[0]
-		temp, _ := strconv.ParseFloat(parts[1], 64)
+		line := s.Bytes()
+		splitIdx := slices.Index(line, ';')
+		name := string(line[:splitIdx])
+		temp, _ := strconv.ParseFloat(string(line[splitIdx+1:]), 64)
 		if stat, ok := stats[name]; ok {
 			stat.min = min(stat.min, temp)
 			stat.max = max(stat.max, temp)
