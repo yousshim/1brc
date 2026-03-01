@@ -30,7 +30,7 @@ func Generate(size int, r io.Reader, w io.Writer) {
 	localStart := start
 	for i := range size {
 		station := stations[rand.IntN(len(stations))]
-		fmt.Fprintf(bw, "%s;%.2f\n", station.name, station.temp())
+		fmt.Fprintf(bw, "%s;%.1f\n", station.name, station.temp())
 		if i%50_000_000 == 0 {
 			fmt.Printf("Generated %d measurements in %f s\n", i, time.Since(localStart).Seconds())
 			localStart = time.Now()
