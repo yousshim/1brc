@@ -6,19 +6,20 @@ import (
 	"io"
 	"maps"
 	"slices"
-	"strconv"
 )
 
 type stationStat struct {
-	min float64
-	max float64
-	sum float64
+	min int
+	max int
+	sum int64
 	cnt int
 }
 
 func (stat stationStat) String() string {
-	mean := stat.sum / float64(stat.cnt)
-	return fmt.Sprintf("%.1f/%.1f/%.1f", stat.min, stat.max, mean)
+	mean := float64(stat.sum)/10/float64(stat.cnt)
+	minn := float64(stat.min)/10
+	maxx := float64(stat.max)/10
+	return fmt.Sprintf("%.1f/%.1f/%.1f", minn, maxx, mean)
 }
 
 func Calculate(r io.Reader, w io.Writer) {
@@ -28,17 +29,17 @@ func Calculate(r io.Reader, w io.Writer) {
 		line := s.Bytes()
 		splitIdx := slices.Index(line, ';')
 		name := string(line[:splitIdx])
-		temp, _ := strconv.ParseFloat(string(line[splitIdx+1:]), 64)
+		temp := parseTemp(line[splitIdx+1:])
 		if stat, ok := stats[name]; ok {
 			stat.min = min(stat.min, temp)
 			stat.max = max(stat.max, temp)
-			stat.sum += temp
+			stat.sum += int64(temp)
 			stat.cnt++
 		} else {
 			stats[name] = &stationStat{
 				min: temp,
 				max: temp,
-				sum: temp,
+				sum: int64(temp),
 				cnt: 1,
 			}
 		}
@@ -46,4 +47,20 @@ func Calculate(r io.Reader, w io.Writer) {
 	for _, key := range slices.Sorted(maps.Keys(stats)) {
 		fmt.Fprintf(w, "\"%s\"/%v\n", key, stats[key])
 	}
+}
+
+func parseTemp(bytes []byte) int {
+	sign := 1
+	if bytes[0] == '-' {
+		sign = -1
+		bytes = bytes[1:]
+	}
+	temp := 0
+	for _, b := range bytes {
+		if b == '.' {
+			continue
+		}
+		temp = temp*10 + int(b-'0')
+	}
+	return sign*temp
 }
