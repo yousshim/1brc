@@ -93,10 +93,7 @@ func probe(table []*stationStat, k []byte, h uint64) (uint64, bool) {
 		if table[i] == nil {
 			return i, false
 		}
-		if table[i].hash == h {
-			return i, true
-		}
-		if bytes.Equal(table[i].name, k) {
+		if table[i].hash == h && bytes.Equal(table[i].name, k) {
 			return i, true
 		}
 	}
@@ -104,10 +101,7 @@ func probe(table []*stationStat, k []byte, h uint64) (uint64, bool) {
 		if table[i] == nil {
 			return i, false
 		}
-		if table[i].hash == h {
-			return i, true
-		}
-		if bytes.Equal(table[i].name, k) {
+		if table[i].hash == h && bytes.Equal(table[i].name, k) {
 			return i, true
 		}
 	}
