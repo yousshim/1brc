@@ -13,6 +13,7 @@ type stationStat struct {
 	max int
 	sum int64
 	cnt int
+	hash uint64
 }
 
 func (stat stationStat) String() string {
@@ -53,6 +54,7 @@ func Calculate(r io.Reader, w io.Writer) {
 			fmt.Fprintf(bw, "%v\n", stat)
 		}
 	}
+	println(collision)
 }
 
 func parseTemp(bytes []byte) int {
@@ -71,42 +73,45 @@ func parseTemp(bytes []byte) int {
 	return sign*temp
 }
 
-func findTableAndSplitIndex(table []*stationStat, line []byte) (int, bool, int) {
-	h := 0
+var collision uint64 = 0
+
+func findTableAndSplitIndex(table []*stationStat, line []byte) (uint64, bool, int) {
+	h := uint64(0)
 	si := 0
 	for _, b := range line {
 		if b == ';' {
 			break
 		}
 		si++
-		h = h*31 + int(b)
+		h = h*31 + uint64(b)
 	}
-	if h < 0 {
-		h = -h
-	}
-	h = h % len(table)
+	h = h & uint64(len(table)-1)
 	key := line[:si]
-	if table[h] == nil {
-		return h, false, si
-	}
-	if bytes.Equal(table[h].name, key) {
-		return h, true, si
-	}
-	for i := h; i < len(table); i++ {
+	for i := h; i < uint64(len(table)); i++ {
 		if table[i] == nil {
 			return i, false, si
 		}
-		if bytes.Equal(table[i].name, key) {
+		if table[i].hash == h {
 			return i, true, si
 		}
+		if  bytes.Equal(table[i].name, key) {
+			table[i].hash = h
+			return i, true, si
+		}
+		collision++
 	}
 	for i := range h {
 		if table[i] == nil {
 			return i, false, si
 		}
-		if bytes.Equal(table[i].name, key) {
+		if table[i].hash == h {
 			return i, true, si
 		}
+		if bytes.Equal(table[i].name, key) {
+			table[i].hash = h
+			return i, true, si
+		}
+		collision++
 	}
 	panic("unreachable")
 }
