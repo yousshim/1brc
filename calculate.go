@@ -28,8 +28,9 @@ func Calculate(r io.Reader, w io.Writer) {
 	stats := make([]*stationStat, 1<<17)
 	for s.Scan() {
 		line := s.Bytes()
-		idx, ok, splitIdx := findTableAndSplitIndex(stats, line)
+		splitIdx := bytes.IndexRune(line, ';')
 		name := line[:splitIdx]
+		idx, ok := findTableIndex(stats, name)
 		temp := parseTemp(line[splitIdx+1:])
 		if ok {
 			stat := stats[idx]
@@ -54,7 +55,6 @@ func Calculate(r io.Reader, w io.Writer) {
 			fmt.Fprintf(bw, "%v\n", stat)
 		}
 	}
-	println(collision)
 }
 
 func parseTemp(bytes []byte) int {
@@ -73,45 +73,39 @@ func parseTemp(bytes []byte) int {
 	return sign*temp
 }
 
-var collision uint64 = 0
-
-func findTableAndSplitIndex(table []*stationStat, line []byte) (uint64, bool, int) {
+func hash(bytes []byte, capacity int) uint64 {
 	h := uint64(0)
-	si := 0
-	for _, b := range line {
-		if b == ';' {
-			break
-		}
-		si++
+	for _, b := range bytes {
 		h = h*31 + uint64(b)
 	}
-	h = h & uint64(len(table)-1)
-	key := line[:si]
+	return h & (uint64(capacity) - 1)
+}
+
+func findTableIndex(table []*stationStat, key []byte) (uint64, bool) {
+	h := hash(key, len(table))
 	for i := h; i < uint64(len(table)); i++ {
 		if table[i] == nil {
-			return i, false, si
+			return i, false
 		}
 		if table[i].hash == h {
-			return i, true, si
+			return i, true
 		}
 		if  bytes.Equal(table[i].name, key) {
 			table[i].hash = h
-			return i, true, si
+			return i, true
 		}
-		collision++
 	}
 	for i := range h {
 		if table[i] == nil {
-			return i, false, si
+			return i, false
 		}
 		if table[i].hash == h {
-			return i, true, si
+			return i, true
 		}
 		if bytes.Equal(table[i].name, key) {
 			table[i].hash = h
-			return i, true, si
+			return i, true
 		}
-		collision++
 	}
 	panic("unreachable")
 }
