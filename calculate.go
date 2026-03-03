@@ -123,17 +123,6 @@ func process(b []byte, w io.Writer) {
 		}
 	}
 	w.Write(bw)
-	// bw := bufio.NewWriter(w)
-	// defer bw.Flush()
-	// for _, stat := range stats {
-	// 	if stat != nil {
-	// 		mn := float64(stat.min) / 10
-	// 		mx := float64(stat.max) / 10
-	// 		avg := float64(stat.sum) / 10 / float64(stat.cnt)
-	// 		strconv.AppendFloat(bw, avg, 'f', -1, 64)
-	// 		fmt.Fprintf(bw, "\"%s\"/%.1f/%.1f/%.1f\n", stat.name, mn, mx, avg)
-	// 	}
-	// }
 }
 
 func lookup(stats []*stationStat, name []byte, h uint64) (uint64, bool) {
