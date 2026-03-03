@@ -1,12 +1,11 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
-	"fmt"
 	"io"
 	"math"
 	"os"
+	"strconv"
 	"syscall"
 )
 
@@ -105,16 +104,36 @@ func process(b []byte, w io.Writer) {
 		}
 	}
 
-	bw := bufio.NewWriter(w)
-	defer bw.Flush()
+	bw := make([]byte, 0, 1024*1024)
 	for _, stat := range stats {
 		if stat != nil {
 			mn := float64(stat.min) / 10
 			mx := float64(stat.max) / 10
 			avg := float64(stat.sum) / 10 / float64(stat.cnt)
-			fmt.Fprintf(bw, "\"%s\"/%.1f/%.1f/%.1f\n", stat.name, mn, mx, avg)
+			bw = append(bw, '"')
+			bw = append(bw, stat.name...)
+			bw = append(bw, '"')
+			bw = append(bw, '/')
+			bw = strconv.AppendFloat(bw, mn, 'f', 1, 64)
+			bw = append(bw, '/')
+			bw = strconv.AppendFloat(bw, mx, 'f', 1, 64)
+			bw = append(bw, '/')
+			bw = strconv.AppendFloat(bw, avg, 'f', 1, 64)
+			bw = append(bw, '\n')
 		}
 	}
+	w.Write(bw)
+	// bw := bufio.NewWriter(w)
+	// defer bw.Flush()
+	// for _, stat := range stats {
+	// 	if stat != nil {
+	// 		mn := float64(stat.min) / 10
+	// 		mx := float64(stat.max) / 10
+	// 		avg := float64(stat.sum) / 10 / float64(stat.cnt)
+	// 		strconv.AppendFloat(bw, avg, 'f', -1, 64)
+	// 		fmt.Fprintf(bw, "\"%s\"/%.1f/%.1f/%.1f\n", stat.name, mn, mx, avg)
+	// 	}
+	// }
 }
 
 func lookup(stats []*stationStat, name []byte, h uint64) (uint64, bool) {
