@@ -5,6 +5,40 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math"
+	"os"
+	"syscall"
+)
+
+func Calculate(f *os.File, w io.Writer) {
+	fi, err := f.Stat()
+	if err != nil {
+		println(err.Error())
+		os.Exit(1)
+	}
+	s := fi.Size()
+	if s == 0 {
+		println("empty file")
+		os.Exit(0)
+	}
+	if s > math.MaxInt {
+		println("file too large")
+		os.Exit(1)
+	}
+
+	d, err := syscall.Mmap(int(f.Fd()), 0, int(s), syscall.PROT_READ, syscall.MAP_SHARED)
+	if err != nil {
+		println(err.Error())
+		os.Exit(1)
+	}
+	defer syscall.Munmap(d)
+
+	process(d, w)
+}
+
+const (
+	fnvOffset64 = 14695981039346656037
+	fnvPrime64  = 1099511628211
 )
 
 type stationStat struct {
@@ -14,94 +48,38 @@ type stationStat struct {
 	sum  int64
 	cnt  int
 	hash uint64
+	psl  int
 }
 
-func (stat stationStat) String() string {
-	mean := float64(stat.sum) / 10 / float64(stat.cnt)
-	minn := float64(stat.min) / 10
-	maxx := float64(stat.max) / 10
-	return fmt.Sprintf("\"%s\"/%.1f/%.1f/%.1f", string(stat.name), minn, maxx, mean)
-}
+func process(b []byte, w io.Writer) {
+	stats := make([]*stationStat, 1<<14)
 
-func Calculate(r io.Reader, w io.Writer) {
-	stats := make([]*stationStat, 1<<17)
-
-	processLine := func(line []byte) {
-		splitIdx := bytes.IndexByte(line, ';')
-		if splitIdx < 0 {
-			return
+	for {
+		lb := bytes.IndexByte(b, '\n')
+		if lb < 0 {
+			break
 		}
-		name := line[:splitIdx]
-		temp := parseTemp(line[splitIdx+1:])
+		l := b[:lb]
+		b = b[lb+1:]
+
+		name, tempStr, _ := bytes.Cut(l, []byte{';'})
+		temp := parseTemp(tempStr)
+
 		h := hash(name)
-		if idx, ok := probe(stats, name, h); ok {
-			stat := stats[idx]
+		if stat, ok := lookup(stats, name, h); ok {
 			stat.min = min(stat.min, temp)
 			stat.max = max(stat.max, temp)
 			stat.sum += int64(temp)
 			stat.cnt++
-			return
-		}
-
-		stat := &stationStat{
-			name: append([]byte{}, name...),
-			min:  temp,
-			max:  temp,
-			sum:  int64(temp),
-			cnt:  1,
-		}
-		insert(stats, stat, h)
-	}
-
-	const chunkSize = 1 << 20
-	buf := make([]byte, chunkSize)
-	used := 0
-
-	for {
-		n, err := r.Read(buf[used:])
-		if n > 0 {
-			dataLen := used + n
-
-			start := 0
-			for {
-				rel := bytes.IndexByte(buf[start:dataLen], '\n')
-				if rel < 0 {
-					break
-				}
-
-				end := start + rel
-				line := buf[start:end]
-				if len(line) > 0 && line[len(line)-1] == '\r' {
-					line = line[:len(line)-1]
-				}
-				if len(line) > 0 {
-					processLine(line)
-				}
-				start = end + 1
+		} else {
+			v := &stationStat{
+				name: append([]byte{}, name...),
+				min:  temp,
+				max:  temp,
+				sum:  int64(temp),
+				cnt:  1,
 			}
-
-			if start < dataLen {
-				used = copy(buf, buf[start:dataLen])
-			} else {
-				used = 0
-			}
-		}
-
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	if used > 0 {
-		line := buf[:used]
-		if line[len(line)-1] == '\r' {
-			line = line[:len(line)-1]
-		}
-		if len(line) > 0 {
-			processLine(line)
+			insert(stats, h, v)
 		}
 	}
 
@@ -109,85 +87,74 @@ func Calculate(r io.Reader, w io.Writer) {
 	defer bw.Flush()
 	for _, stat := range stats {
 		if stat != nil {
-			fmt.Fprintf(bw, "%v\n", stat)
+			mn := float64(stat.min) / 10
+			mx := float64(stat.max) / 10
+			avg := float64(stat.sum) / 10 / float64(stat.cnt)
+			fmt.Fprintf(bw, "\"%s\"/%.1f/%.1f/%.1f\n", stat.name, mn, mx, avg)
 		}
 	}
 }
 
-func parseTemp(bytes []byte) int {
-	sign := 1
-	if bytes[0] == '-' {
-		sign = -1
-		bytes = bytes[1:]
-	}
-	temp := 0
-	for _, b := range bytes {
-		if b == '.' {
-			continue
-		}
-		temp = temp*10 + int(b-'0')
-	}
-	return sign * temp
-}
-
-func hash(bytes []byte) uint64 {
-	const (
-		fnvOffset64 = 14695981039346656037
-		fnvPrime64  = 1099511628211
-	)
-
+func hash(l []byte) uint64 {
 	h := uint64(fnvOffset64)
-	for _, b := range bytes {
-		h ^= uint64(b)
+	for _, r := range l {
+		h ^= uint64(r)
 		h *= fnvPrime64
 	}
 	return h
 }
 
-func probe(table []*stationStat, k []byte, h uint64) (uint64, bool) {
-	idx := h & (uint64(len(table)) - 1)
-	for i := idx; i < uint64(len(table)); i++ {
-		if table[i] == nil {
-			return i, false
-		}
-		if table[i].hash == h && bytes.Equal(table[i].name, k) {
-			return i, true
-		}
+func parseTemp(tempStr []byte) int {
+	sign := 1
+	if tempStr[0] == '-' {
+		sign = -1
+		tempStr = tempStr[1:]
 	}
-	for i := range idx {
-		if table[i] == nil {
-			return i, false
+	temp := 0
+	for _, r := range tempStr {
+		if r == '.' {
+			continue
 		}
-		if table[i].hash == h && bytes.Equal(table[i].name, k) {
-			return i, true
-		}
+		temp = temp*10 + int(r-'0')
 	}
-	panic("unreachable")
+	temp = sign * temp
+	return temp
 }
 
-func insert(table []*stationStat, stat *stationStat, h uint64) {
-	stat.hash = h
-	n := uint64(len(table))
-	idx := h & (n - 1)
-	dist := uint64(0)
-
-	for {
-		if table[idx] == nil {
-			table[idx] = stat
-			return
+func lookup(stats []*stationStat, name []byte, h uint64) (*stationStat, bool) {
+	l := uint64(len(stats))
+	idx := h & (l - 1)
+	ok := false
+	psl := 0
+	for stats[idx] != nil {
+		if stats[idx].hash == h && bytes.Equal(stats[idx].name, name) {
+			ok = true
+			break
 		}
-
-		existing := table[idx]
-		existingDist := (idx + n - existing.hash) & (n - 1)
-		if existingDist < dist {
-			table[idx], stat = stat, existing
-			dist = existingDist
+		if psl > stats[idx].psl {
+			break
 		}
-
-		idx = (idx + 1) & (n - 1)
-		dist++
-		if dist >= n {
-			panic("hash table is full")
-		}
+		idx = (idx + 1) & (l - 1)
+		psl++
 	}
+	return stats[idx], ok
 }
+
+func insert(stats []*stationStat, h uint64, v *stationStat) {
+	l := uint64(len(stats))
+	idx := h & (l - 1)
+	vpsl := 0
+	v.hash = h
+	for stats[idx] != nil {
+		if vpsl > stats[idx].psl {
+			v.psl = vpsl
+			stats[idx], v = v, stats[idx]
+			vpsl = v.psl
+		}
+		idx = (idx + 1) & (l - 1)
+		vpsl++
+	}
+	v.psl = vpsl
+	stats[idx] = v
+}
+
