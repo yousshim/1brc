@@ -48,25 +48,46 @@ type stationStat struct {
 	sum  int64
 	cnt  int
 	hash uint64
-	psl  int
 }
 
 func process(b []byte, w io.Writer) {
-	stats := make([]*stationStat, 1<<14)
+	stats := make([]*stationStat, 1<<15)
 
-	for {
-		lb := bytes.IndexByte(b, '\n')
-		if lb < 0 {
-			break
+	for len(b) > 0 {
+		i := 0
+		var name []byte
+		h := uint64(fnvOffset64)
+		for ; i < len(b); i++ {
+			r := b[i]
+			h ^= uint64(r)
+			h *= fnvPrime64
+			if r == ';' {
+				name = b[:i]
+				break
+			}
 		}
-		l := b[:lb]
-		b = b[lb+1:]
+		i++
+		sign := 1
+		if b[i] == '-' {
+			sign = -1
+			i++
+		}
+		temp := 0
+		for ; i < len(b); i++ {
+			r := b[i]
+			if r == '.' {
+				continue
+			}
+			if r == '\n' {
+				b = b[i+1:]
+				break
+			}
+			temp = temp*10 + int(r-'0')
+		}
+		temp = sign * temp
 
-		name, tempStr, _ := bytes.Cut(l, []byte{';'})
-		temp := parseTemp(tempStr)
-
-		h := hash(name)
-		if stat, ok := lookup(stats, name, h); ok {
+		if idx, ok := lookup(stats, name, h); ok {
+			stat := stats[idx]
 			stat.min = min(stat.min, temp)
 			stat.max = max(stat.max, temp)
 			stat.sum += int64(temp)
@@ -78,8 +99,9 @@ func process(b []byte, w io.Writer) {
 				max:  temp,
 				sum:  int64(temp),
 				cnt:  1,
+				hash: h,
 			}
-			insert(stats, h, v)
+			stats[idx] = v
 		}
 	}
 
@@ -95,66 +117,17 @@ func process(b []byte, w io.Writer) {
 	}
 }
 
-func hash(l []byte) uint64 {
-	h := uint64(fnvOffset64)
-	for _, r := range l {
-		h ^= uint64(r)
-		h *= fnvPrime64
-	}
-	return h
-}
-
-func parseTemp(tempStr []byte) int {
-	sign := 1
-	if tempStr[0] == '-' {
-		sign = -1
-		tempStr = tempStr[1:]
-	}
-	temp := 0
-	for _, r := range tempStr {
-		if r == '.' {
-			continue
-		}
-		temp = temp*10 + int(r-'0')
-	}
-	temp = sign * temp
-	return temp
-}
-
-func lookup(stats []*stationStat, name []byte, h uint64) (*stationStat, bool) {
+func lookup(stats []*stationStat, name []byte, h uint64) (uint64, bool) {
 	l := uint64(len(stats))
 	idx := h & (l - 1)
 	ok := false
-	psl := 0
 	for stats[idx] != nil {
 		if stats[idx].hash == h && bytes.Equal(stats[idx].name, name) {
 			ok = true
 			break
 		}
-		if psl > stats[idx].psl {
-			break
-		}
 		idx = (idx + 1) & (l - 1)
-		psl++
 	}
-	return stats[idx], ok
-}
-
-func insert(stats []*stationStat, h uint64, v *stationStat) {
-	l := uint64(len(stats))
-	idx := h & (l - 1)
-	vpsl := 0
-	v.hash = h
-	for stats[idx] != nil {
-		if vpsl > stats[idx].psl {
-			v.psl = vpsl
-			stats[idx], v = v, stats[idx]
-			vpsl = v.psl
-		}
-		idx = (idx + 1) & (l - 1)
-		vpsl++
-	}
-	v.psl = vpsl
-	stats[idx] = v
+	return idx, ok
 }
 
