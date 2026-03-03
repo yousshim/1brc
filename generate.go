@@ -26,6 +26,10 @@ func Generate(size int, r io.Reader, w io.Writer) {
 	if err != nil {
 		panic(err)
 	}
+	rand.Shuffle(len(stations), func(i, j int) {
+		stations[i], stations[j] = stations[j], stations[i]
+	})
+	stations = stations[:10_000]
 	start := time.Now()
 	localStart := start
 	for i := range size {
