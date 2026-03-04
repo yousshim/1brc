@@ -56,7 +56,7 @@ func process(b []byte, w io.Writer) {
 		i := 0
 		var name []byte
 		h := uint64(fnvOffset64)
-		for ; i < len(b); i++ {
+		for ; ; i++ {
 			r := b[i]
 			h ^= uint64(r)
 			h *= fnvPrime64
@@ -72,17 +72,17 @@ func process(b []byte, w io.Writer) {
 			i++
 		}
 		temp := 0
-		for ; i < len(b); i++ {
-			r := b[i]
-			if r == '.' {
-				continue
-			}
-			if r == '\n' {
-				b = b[i+1:]
-				break
-			}
-			temp = temp*10 + int(r-'0')
+		if b[i+1] == '.' {
+			temp = int(b[i]) - '0'
+			temp = temp*10 + int(b[i+2]) - '0'
+			b = b[i+4:]
+		} else {
+			temp = int(b[i]) - '0'
+			temp = temp*10 + int(b[i+1]) - '0'
+			temp = temp*10 + int(b[i+3]) - '0'
+			b = b[i+5:]
 		}
+
 		temp = sign * temp
 
 		if idx, ok := lookup(stats, name, h); ok {
