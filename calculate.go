@@ -5,8 +5,10 @@ import (
 	"io"
 	"math"
 	"os"
+	"runtime"
 	"slices"
 	"strconv"
+	"sync"
 	"syscall"
 )
 
@@ -51,7 +53,28 @@ type stationStat struct {
 }
 
 func process(b []byte, w io.Writer) {
-	stats := processChunk(b)
+	workers := runtime.NumCPU()
+	if workers < 2 || len(b) < workers {
+		workers = 1
+	}
+
+	chunks := splitChunks(b, workers)
+	chunkStats := make([][]*stationStat, len(chunks))
+	wg := sync.WaitGroup{}
+	wg.Add(len(chunks))
+
+	for i, chunk := range chunks {
+		go func() {
+			defer wg.Done()
+			chunkStats[i] = processChunk(chunk)
+		}()
+	}
+	wg.Wait()
+
+	stats := make([]*stationStat, 1<<15)
+	for _, chunkStat := range chunkStats {
+		mergeStats(stats, chunkStat)
+	}
 
 	slices.SortFunc(stats, func(a, b *stationStat) int {
 		if a == nil {
@@ -83,6 +106,46 @@ func process(b []byte, w io.Writer) {
 		bw = append(bw, '\n')
 	}
 	w.Write(bw)
+}
+
+func splitChunks(b []byte, workers int) [][]byte {
+	if workers <= 1 {
+		return [][]byte{b}
+	}
+
+	target := len(b)
+	if workers > target {
+		workers = target
+	}
+
+	chunks := make([][]byte, 0, workers)
+	avg := target / workers
+	start := 0
+	for i := 0; i < workers && start < len(b); i++ {
+		end := start + avg
+		if i == workers-1 || end >= len(b) {
+			end = len(b)
+		} else {
+			for end < len(b) && b[end-1] != '\n' {
+				end++
+			}
+		}
+		if end == start {
+			continue
+		}
+		chunks = append(chunks, b[start:end])
+		start = end
+	}
+
+	if start < len(b) {
+		chunks = append(chunks, b[start:])
+	}
+
+	if len(chunks) == 0 {
+		return [][]byte{b}
+	}
+
+	return chunks
 }
 
 func processChunk(b []byte) []*stationStat {
@@ -141,6 +204,30 @@ func processChunk(b []byte) []*stationStat {
 	return stats
 }
 
+func mergeStats(dst []*stationStat, src []*stationStat) {
+	for _, stat := range src {
+		if stat == nil {
+			continue
+		}
+		if idx, ok := lookup(dst, stat.name, stat.hash); ok {
+			d := dst[idx]
+			d.min = min(d.min, stat.min)
+			d.max = max(d.max, stat.max)
+			d.sum += stat.sum
+			d.cnt += stat.cnt
+		} else {
+			dst[idx] = &stationStat{
+				name: append([]byte{}, stat.name...),
+				min:  stat.min,
+				max:  stat.max,
+				sum:  stat.sum,
+				cnt:  stat.cnt,
+				hash: stat.hash,
+			}
+		}
+	}
+}
+
 func lookup(stats []*stationStat, name []byte, h uint64) (uint64, bool) {
 	l := uint64(len(stats))
 	idx := h & (l - 1)
@@ -154,4 +241,3 @@ func lookup(stats []*stationStat, name []byte, h uint64) (uint64, bool) {
 	}
 	return idx, ok
 }
-
