@@ -16,7 +16,7 @@ type station struct {
 }
 
 func (s station) temp() float64 {
-	return rand.NormFloat64()*7 + s.meanTemp
+	return max(rand.NormFloat64()*7 + s.meanTemp, 99.9)
 }
 
 func Generate(size int, r io.Reader, w io.Writer) {
