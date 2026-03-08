@@ -5,6 +5,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"slices"
 	"strconv"
 	"syscall"
 )
@@ -50,8 +51,42 @@ type stationStat struct {
 }
 
 func process(b []byte, w io.Writer) {
-	stats := make([]*stationStat, 1<<15)
+	stats := processChunk(b)
 
+	slices.SortFunc(stats, func(a, b *stationStat) int {
+		if a == nil {
+			return 1
+		}
+		if b == nil {
+			return -1
+		}
+		return bytes.Compare(a.name, b.name)
+	})
+
+	bw := make([]byte, 0, 1024*1024)
+	for _, stat := range stats {
+		if stat == nil {
+			break
+		}
+		mn := float64(stat.min) / 10
+		mx := float64(stat.max) / 10
+		avg := float64(stat.sum) / 10 / float64(stat.cnt)
+		bw = append(bw, '"')
+		bw = append(bw, stat.name...)
+		bw = append(bw, '"')
+		bw = append(bw, '/')
+		bw = strconv.AppendFloat(bw, mn, 'f', 1, 64)
+		bw = append(bw, '/')
+		bw = strconv.AppendFloat(bw, mx, 'f', 1, 64)
+		bw = append(bw, '/')
+		bw = strconv.AppendFloat(bw, avg, 'f', 1, 64)
+		bw = append(bw, '\n')
+	}
+	w.Write(bw)
+}
+
+func processChunk(b []byte) []*stationStat {
+	stats := make([]*stationStat, 1<<15)
 	for len(b) > 0 {
 		i := 0
 		var name []byte
@@ -103,26 +138,7 @@ func process(b []byte, w io.Writer) {
 			stats[idx] = v
 		}
 	}
-
-	bw := make([]byte, 0, 1024*1024)
-	for _, stat := range stats {
-		if stat != nil {
-			mn := float64(stat.min) / 10
-			mx := float64(stat.max) / 10
-			avg := float64(stat.sum) / 10 / float64(stat.cnt)
-			bw = append(bw, '"')
-			bw = append(bw, stat.name...)
-			bw = append(bw, '"')
-			bw = append(bw, '/')
-			bw = strconv.AppendFloat(bw, mn, 'f', 1, 64)
-			bw = append(bw, '/')
-			bw = strconv.AppendFloat(bw, mx, 'f', 1, 64)
-			bw = append(bw, '/')
-			bw = strconv.AppendFloat(bw, avg, 'f', 1, 64)
-			bw = append(bw, '\n')
-		}
-	}
-	w.Write(bw)
+	return stats
 }
 
 func lookup(stats []*stationStat, name []byte, h uint64) (uint64, bool) {
