@@ -151,19 +151,10 @@ func splitChunks(b []byte, workers int) [][]byte {
 func processChunk(b []byte) []*stationStat {
 	stats := make([]*stationStat, 1<<15)
 	for len(b) > 0 {
-		i := 0
-		var name []byte
-		h := uint64(fnvOffset64)
-		for ; ; i++ {
-			r := b[i]
-			h ^= uint64(r)
-			h *= fnvPrime64
-			if r == ';' {
-				name = b[:i]
-				break
-			}
-		}
-		i++
+		sc := bytes.IndexByte(b, ';')
+		name := b[:sc]
+		h := hash(name)
+		i := sc + 1
 		sign := 1
 		if b[i] == '-' {
 			sign = -1
@@ -202,6 +193,15 @@ func processChunk(b []byte) []*stationStat {
 		}
 	}
 	return stats
+}
+
+func hash(name []byte) uint64 {
+	h := uint64(fnvOffset64)
+	for _, r := range name {
+		h ^= uint64(r)
+		h *= fnvPrime64
+	}
+	return h
 }
 
 func mergeStats(dst []*stationStat, src []*stationStat) {
