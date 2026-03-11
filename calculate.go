@@ -43,6 +43,9 @@ const (
 	fnvPrime64  = 1099511628211
 )
 
+var NEW_LINE = []byte{'\n'}
+var SIMI_COLON = []byte{';'}
+
 type stationStat struct {
 	name []byte
 	min  int
@@ -151,29 +154,12 @@ func splitChunks(b []byte, workers int) [][]byte {
 func processChunk(b []byte) []*stationStat {
 	stats := make([]*stationStat, 1<<15)
 	for len(b) > 0 {
-		sc := bytes.IndexByte(b, ';')
-		name := b[:sc]
+		var name, tempStr []byte
+		name, b, _ = bytes.Cut(b, SIMI_COLON)
+		tempStr, b, _ = bytes.Cut(b, NEW_LINE)
+
+		temp := parseTemp(tempStr)
 		h := hash(name)
-		i := sc + 1
-		sign := 1
-		if b[i] == '-' {
-			sign = -1
-			i++
-		}
-		temp := 0
-		if b[i+1] == '.' {
-			temp = int(b[i]) - '0'
-			temp = temp*10 + int(b[i+2]) - '0'
-			b = b[i+4:]
-		} else {
-			temp = int(b[i]) - '0'
-			temp = temp*10 + int(b[i+1]) - '0'
-			temp = temp*10 + int(b[i+3]) - '0'
-			b = b[i+5:]
-		}
-
-		temp = sign * temp
-
 		if idx, ok := lookup(stats, name, h); ok {
 			stat := stats[idx]
 			stat.min = min(stat.min, temp)
@@ -193,6 +179,26 @@ func processChunk(b []byte) []*stationStat {
 		}
 	}
 	return stats
+}
+
+func parseTemp(b []byte) int {
+	i := 0
+	sign := 1
+	if b[i] == '-' {
+		sign = -1
+		i++
+	}
+	temp := 0
+	if b[i+1] == '.' {
+		temp = int(b[i]) - '0'
+		temp = temp*10 + int(b[i+2]) - '0'
+	} else {
+		temp = int(b[i]) - '0'
+		temp = temp*10 + int(b[i+1]) - '0'
+		temp = temp*10 + int(b[i+3]) - '0'
+	}
+
+	return sign * temp
 }
 
 func hash(name []byte) uint64 {
